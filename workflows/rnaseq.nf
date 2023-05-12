@@ -94,6 +94,7 @@ ch_biotypes_header_multiqc   = file("$projectDir/assets/multiqc/biotypes_header.
 // MODULE: Loaded from modules/local/
 //
 include { BEDTOOLS_GENOMECOV                 } from '../modules/local/bedtools_genomecov'
+include { L1EM                               } from '../modules/local/l1em'
 include { DESEQ2_QC as DESEQ2_QC_STAR_SALMON } from '../modules/local/deseq2_qc'
 include { DESEQ2_QC as DESEQ2_QC_RSEM        } from '../modules/local/deseq2_qc'
 include { DESEQ2_QC as DESEQ2_QC_SALMON      } from '../modules/local/deseq2_qc'
@@ -407,6 +408,19 @@ workflow RNASEQ {
             ch_genome_bam_index = ALIGN_STAR.out.csi
         }
         ch_versions = ch_versions.mix(ALIGN_STAR.out.versions)
+
+        //
+        // MODULE: Run L1EM to detect Line elements
+        //
+        ch_genome_bam
+            .join(ch_genome_bam_index)
+            .filter { meta, bam, bai -> !meta.single_end }
+            .set { ch_paired_end_bam_bai }
+
+        L1EM (
+            ch_paired_end_bam_bai,
+            PREPARE_GENOME.out.fasta
+        )
 
         //
         // SUBWORKFLOW: Remove duplicate reads from BAM file based on UMIs
