@@ -18,7 +18,9 @@ process L1EM {
 
     script:
     """
-    run_L1EM.sh \\
+    which run_L1EM.sh
+
+    /tmp/L1EM/run_L1EM.sh \\
         \$PWD/$bam \\
         L1EM
 
