@@ -43,9 +43,9 @@ if (!params.skip_bbsplit && !params.bbsplit_index && params.bbsplit_fasta_list) 
 
 // Check alignment parameters
 def prepareToolIndices  = []
-if (!params.skip_bbsplit)   { prepareToolIndices << 'bbsplit'             }
-if (!params.skip_alignment) { prepareToolIndices << params.aligner        }
-if (params.pseudo_aligner)  { prepareToolIndices << params.pseudo_aligner }
+if (!params.skip_bbsplit) { prepareToolIndices << 'bbsplit' }
+if (!params.skip_alignment) { prepareToolIndices << params.aligner }
+if (!params.skip_pseudo_alignment && params.pseudo_aligner) { prepareToolIndices << params.pseudo_aligner }
 
 // Get RSeqC modules to run
 def rseqc_modules = params.rseqc_modules ? params.rseqc_modules.split(',').collect{ it.trim().toLowerCase() } : []
@@ -247,6 +247,7 @@ workflow RNASEQ {
     PREPARE_GENOME.out.fasta
         .combine(ch_strand_fastq.auto_strand)
         .map { it.first() }
+        .first()
         .set { ch_genome_fasta }
 
     FASTQ_SUBSAMPLE_FQ_SALMON (
@@ -321,7 +322,7 @@ workflow RNASEQ {
 
     //
     // Get list of samples that failed trimming threshold for MultiQC report
-    //        
+    //
     ch_trim_read_count
         .map {
             meta, num_reads ->
@@ -332,7 +333,7 @@ workflow RNASEQ {
                 }
         }
         .collect()
-        .map { 
+        .map {
             tsv_data ->
                 def header = ["Sample", "Reads after trimming"]
                 WorkflowRnaseq.multiqcTsvFromList(tsv_data, header)
@@ -393,7 +394,7 @@ workflow RNASEQ {
             '',
             params.seq_center ?: '',
             is_aws_igenome,
-            PREPARE_GENOME.out.fasta
+            PREPARE_GENOME.out.fasta.map { [ [:], it ] }
         )
         ch_genome_bam        = ALIGN_STAR.out.bam
         ch_genome_bam_index  = ALIGN_STAR.out.bai
@@ -429,7 +430,7 @@ workflow RNASEQ {
             // Co-ordinate sort, index and run stats on transcriptome BAM
             BAM_SORT_STATS_SAMTOOLS (
                 ch_transcriptome_bam,
-                PREPARE_GENOME.out.fasta
+                PREPARE_GENOME.out.fasta.map { [ [:], it ] }
             )
             ch_transcriptome_sorted_bam = BAM_SORT_STATS_SAMTOOLS.out.bam
             ch_transcriptome_sorted_bai = BAM_SORT_STATS_SAMTOOLS.out.bai
@@ -503,7 +504,8 @@ workflow RNASEQ {
     if (!params.skip_alignment && params.aligner == 'star_rsem') {
         QUANTIFY_RSEM (
             ch_filtered_reads,
-            PREPARE_GENOME.out.rsem_index
+            PREPARE_GENOME.out.rsem_index,
+            PREPARE_GENOME.out.fasta.map { [ [:], it ] }
         )
         ch_genome_bam        = QUANTIFY_RSEM.out.bam
         ch_genome_bam_index  = QUANTIFY_RSEM.out.bai
@@ -536,9 +538,9 @@ workflow RNASEQ {
     if (!params.skip_alignment && params.aligner == 'hisat2') {
         FASTQ_ALIGN_HISAT2 (
             ch_filtered_reads,
-            PREPARE_GENOME.out.hisat2_index,
-            PREPARE_GENOME.out.splicesites,
-            PREPARE_GENOME.out.fasta
+            PREPARE_GENOME.out.hisat2_index.map { [ [:], it ] },
+            PREPARE_GENOME.out.splicesites.map { [ [:], it ] },
+            PREPARE_GENOME.out.fasta.map { [ [:], it ] }
         )
         ch_genome_bam        = FASTQ_ALIGN_HISAT2.out.bam
         ch_genome_bam_index  = FASTQ_ALIGN_HISAT2.out.bai
@@ -604,7 +606,7 @@ workflow RNASEQ {
         ch_pass_fail_mapped
             .fail
             .collect()
-            .map { 
+            .map {
                 tsv_data ->
                     def header = ["Sample", "STAR uniquely mapped reads (%)"]
                     WorkflowRnaseq.multiqcTsvFromList(tsv_data, header)
@@ -631,8 +633,8 @@ workflow RNASEQ {
     if (!params.skip_alignment && !params.skip_markduplicates && !params.with_umi) {
         BAM_MARKDUPLICATES_PICARD (
             ch_genome_bam,
-            PREPARE_GENOME.out.fasta,
-            PREPARE_GENOME.out.fai
+            PREPARE_GENOME.out.fasta.map { [ [:], it ] },
+            PREPARE_GENOME.out.fai.map { [ [:], it ] }
         )
         ch_genome_bam             = BAM_MARKDUPLICATES_PICARD.out.bam
         ch_genome_bam_index       = BAM_MARKDUPLICATES_PICARD.out.bai
@@ -765,7 +767,7 @@ workflow RNASEQ {
             ch_versions = ch_versions.mix(BAM_RSEQC.out.versions)
 
             ch_inferexperiment_multiqc
-                .map { 
+                .map {
                     meta, strand_log ->
                         def inferred_strand = WorkflowRnaseq.getInferexperimentStrandedness(strand_log, 30)
                         pass_strand_check[meta.id] = true
@@ -775,7 +777,7 @@ workflow RNASEQ {
                         }
                 }
                 .collect()
-                .map { 
+                .map {
                     tsv_data ->
                         def header = [
                             "Sample",
@@ -797,7 +799,7 @@ workflow RNASEQ {
     ch_salmon_multiqc                   = Channel.empty()
     ch_pseudoaligner_pca_multiqc        = Channel.empty()
     ch_pseudoaligner_clustering_multiqc = Channel.empty()
-    if (params.pseudo_aligner == 'salmon') {
+    if (!params.skip_pseudo_alignment && params.pseudo_aligner == 'salmon') {
         QUANTIFY_SALMON (
             ch_filtered_reads,
             PREPARE_GENOME.out.salmon_index,
