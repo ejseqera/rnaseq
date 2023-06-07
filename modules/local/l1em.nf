@@ -22,7 +22,7 @@ process L1EM {
 
     run_L1EM.sh \\
         \$PWD/$bam \\
-        L1EM
+        \$L1EM_HOME
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
