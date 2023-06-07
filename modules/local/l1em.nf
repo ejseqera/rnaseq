@@ -19,7 +19,8 @@ process L1EM {
     script:
     """
     which run_L1EM.sh
-
+    echo \$L1EM_HOME
+    
     run_L1EM.sh \\
         \$PWD/$bam \\
         \$L1EM_HOME
